@@ -1,10 +1,9 @@
-# services/recipe_service.py
-
+# recipe_service.py
 from database.db_connector import get_connection
 
 class RecipeService:
     @staticmethod
-    def search_recipes_by_budget(budget, quarter):
+    def search_recipes_by_budget(budget, quarter, page=1, per_page=10):
         """예산 기반 레시피 검색"""
         try:
             conn = get_connection()
@@ -12,35 +11,69 @@ class RecipeService:
             
             query = """
                 SELECT 
-                    r.recipeID as recipe_id,
-                    r.recipeName as recipe_name,
-                    COALESCE(SUM(ri.amount * ip.price), 0) as total_price
+                    r.recipeID,
+                    r.recipeName,
+                    CAST(SUM(ri.amount * ip.price) AS DECIMAL(10,2)) as total_cost,
+                    string_agg(
+                        concat(
+                            in_name.name, ' (', 
+                            ri.amount, 'g × ', 
+                            ip.price, '원/g = ', 
+                            CAST(ri.amount * ip.price AS DECIMAL(10,2)), '원)'
+                        ),
+                        E'\n   '
+                    ) as ingredients_detail
                 FROM Recipe r
                 LEFT JOIN RecipeIngredient_info ri ON r.recipeID = ri.recipeID
-                LEFT JOIN IngredientPrice ip ON ri.ingredientID = ip.ingredientID AND ip.quarter = %s
+                LEFT JOIN IngredientPrice ip ON ri.ingredientID = ip.ingredientID
+                LEFT JOIN IngredientName in_name ON ri.ingredientID = in_name.ingredientID
+                WHERE ip.quarter = %s
                 GROUP BY r.recipeID, r.recipeName
-                HAVING COALESCE(SUM(ri.amount * ip.price), 0) <= %s
-                ORDER BY total_price ASC;
+                HAVING CAST(SUM(ri.amount * ip.price) AS DECIMAL(10,2)) <= %s
+                ORDER BY total_cost ASC
+                LIMIT %s OFFSET %s;
             """
             
-            cur.execute(query, (quarter, budget))
+            offset = (page - 1) * per_page
+            cur.execute(query, (quarter, budget, per_page, offset))
+            
             recipes = []
             for row in cur.fetchall():
                 recipes.append({
                     'recipe_id': row[0],
                     'recipe_name': row[1],
-                    'total_price': float(row[2]) if row[2] else 0
+                    'total_price': float(row[2]) if row[2] else 0,
+                    'ingredients_detail': row[3] if row[3] else '재료 정보 없음'
                 })
+
+            count_query = """
+                SELECT COUNT(*)
+                FROM (
+                    SELECT r.recipeID
+                    FROM Recipe r
+                    LEFT JOIN RecipeIngredient_info ri ON r.recipeID = ri.recipeID
+                    LEFT JOIN IngredientPrice ip ON ri.ingredientID = ip.ingredientID
+                    WHERE ip.quarter = %s
+                    GROUP BY r.recipeID
+                    HAVING CAST(SUM(ri.amount * ip.price) AS DECIMAL(10,2)) <= %s
+                ) as filtered_recipes
+            """
+            
+            cur.execute(count_query, (quarter, budget))
+            total_count = cur.fetchone()[0]
+            
+            has_more = total_count > (page * per_page)
             
             return {
                 'recipes': recipes,
-                'total_count': len(recipes),
-                'has_more': False
+                'total_count': total_count,
+                'current_page': page,
+                'has_more': has_more
             }
             
         except Exception as e:
             print(f"레시피 검색 중 오류 발생: {e}")
-            return {'recipes': [], 'total_count': 0, 'has_more': False}
+            return {'recipes': [], 'total_count': 0, 'current_page': 1, 'has_more': False}
         
         finally:
             if cur:
@@ -49,7 +82,7 @@ class RecipeService:
                 conn.close()
 
     @staticmethod
-    def search_recipes_by_allergy(allergy, quarter):
+    def search_recipes_by_allergy(allergy, quarter, page=1, per_page=10):
         """알레르기 정보 기반 레시피 검색"""
         try:
             conn = get_connection()
@@ -58,42 +91,75 @@ class RecipeService:
             allergies = [a.strip() for a in allergy.split(',')]
             
             query = """
-                SELECT DISTINCT
-                    r.recipeID as recipe_id,
-                    r.recipeName as recipe_name,
-                    COALESCE(SUM(ri.amount * ip.price), 0) as total_price
+                SELECT 
+                    r.recipeID,
+                    r.recipeName,
+                    CAST(SUM(ri.amount * ip.price) AS DECIMAL(10,2)) as total_cost,
+                    string_agg(
+                        concat(
+                            in_name.name, ' (', 
+                            ri.amount, 'g × ', 
+                            ip.price, '원/g = ', 
+                            CAST(ri.amount * ip.price AS DECIMAL(10,2)), '원)'
+                        ),
+                        E'\n   '
+                    ) as ingredients_detail
                 FROM Recipe r
                 LEFT JOIN RecipeIngredient_info ri ON r.recipeID = ri.recipeID
-                LEFT JOIN IngredientPrice ip ON ri.ingredientID = ip.ingredientID AND ip.quarter = %s
-                WHERE r.recipeID NOT IN (
+                LEFT JOIN IngredientPrice ip ON ri.ingredientID = ip.ingredientID
+                LEFT JOIN IngredientName in_name ON ri.ingredientID = in_name.ingredientID
+                WHERE ip.quarter = %s
+                AND r.recipeID NOT IN (
                     SELECT DISTINCT r2.recipeID
                     FROM Recipe r2
                     JOIN RecipeIngredient_info ri2 ON r2.recipeID = ri2.recipeID
                     JOIN IngredientName ing ON ri2.ingredientID = ing.ingredientID
-                    WHERE ing.name = ANY(%s)
+                    WHERE LOWER(ing.name) LIKE ANY(SELECT LOWER('%' || x || '%') FROM unnest(%s) as x)
                 )
                 GROUP BY r.recipeID, r.recipeName
-                ORDER BY recipe_name ASC;
+                ORDER BY r.recipeName
+                LIMIT %s OFFSET %s;
             """
             
-            cur.execute(query, (quarter, allergies))
+            offset = (page - 1) * per_page
+            cur.execute(query, (quarter, allergies, per_page, offset))
+            
             recipes = []
             for row in cur.fetchall():
                 recipes.append({
                     'recipe_id': row[0],
                     'recipe_name': row[1],
-                    'total_price': float(row[2]) if row[2] else 0
+                    'total_price': float(row[2]) if row[2] else 0,
+                    'ingredients_detail': row[3] if row[3] else '재료 정보 없음'
                 })
+
+            count_query = """
+                SELECT COUNT(DISTINCT r.recipeID)
+                FROM Recipe r
+                WHERE r.recipeID NOT IN (
+                    SELECT DISTINCT r2.recipeID
+                    FROM Recipe r2
+                    JOIN RecipeIngredient_info ri2 ON r2.recipeID = ri2.recipeID
+                    JOIN IngredientName ing ON ri2.ingredientID = ing.ingredientID
+                    WHERE LOWER(ing.name) LIKE ANY(SELECT LOWER('%' || x || '%') FROM unnest(%s) as x)
+                )
+            """
+            
+            cur.execute(count_query, (allergies,))
+            total_count = cur.fetchone()[0]
+            
+            has_more = total_count > (page * per_page)
             
             return {
                 'recipes': recipes,
-                'total_count': len(recipes),
-                'has_more': False
+                'total_count': total_count,
+                'current_page': page,
+                'has_more': has_more
             }
             
         except Exception as e:
             print(f"레시피 검색 중 오류 발생: {e}")
-            return {'recipes': [], 'total_count': 0, 'has_more': False}
+            return {'recipes': [], 'total_count': 0, 'current_page': 1, 'has_more': False}
         
         finally:
             if cur:
@@ -102,7 +168,7 @@ class RecipeService:
                 conn.close()
 
     @staticmethod
-    def get_all_recipes(quarter):
+    def get_all_recipes(quarter, page=1, per_page=10):
         """모든 레시피 조회"""
         try:
             conn = get_connection()
@@ -110,34 +176,57 @@ class RecipeService:
             
             query = """
                 SELECT 
-                    r.recipeID as recipe_id,
-                    r.recipeName as recipe_name,
-                    COALESCE(SUM(ri.amount * ip.price), 0) as total_price
+                    r.recipeID,
+                    r.recipeName,
+                    CAST(SUM(ri.amount * ip.price) AS DECIMAL(10,2)) as total_cost,
+                    string_agg(
+                        concat(
+                            in_name.name, ' (', 
+                            ri.amount, 'g × ', 
+                            ip.price, '원/g = ', 
+                            CAST(ri.amount * ip.price AS DECIMAL(10,2)), '원)'
+                        ),
+                        E'\n   '
+                    ) as ingredients_detail
                 FROM Recipe r
                 LEFT JOIN RecipeIngredient_info ri ON r.recipeID = ri.recipeID
-                LEFT JOIN IngredientPrice ip ON ri.ingredientID = ip.ingredientID AND ip.quarter = %s
+                LEFT JOIN IngredientPrice ip ON ri.ingredientID = ip.ingredientID 
+                    AND ip.quarter = %s
+                LEFT JOIN IngredientName in_name ON ri.ingredientID = in_name.ingredientID
                 GROUP BY r.recipeID, r.recipeName
-                ORDER BY recipe_name ASC;
+                ORDER BY r.recipeName ASC
+                LIMIT %s OFFSET %s;
             """
             
-            cur.execute(query, (quarter,))
+            offset = (page - 1) * per_page
+            cur.execute(query, (quarter, per_page, offset))
+            
             recipes = []
             for row in cur.fetchall():
                 recipes.append({
                     'recipe_id': row[0],
                     'recipe_name': row[1],
-                    'total_price': float(row[2]) if row[2] else 0
+                    'total_price': float(row[2]) if row[2] else 0,
+                    'ingredients_detail': row[3] if row[3] else '재료 정보 없음'
                 })
+
+            # 전체 레시피 수 조회
+            count_query = "SELECT COUNT(*) FROM Recipe"
+            cur.execute(count_query)
+            total_count = cur.fetchone()[0]
+            
+            has_more = total_count > (page * per_page)
             
             return {
                 'recipes': recipes,
-                'total_count': len(recipes),
-                'has_more': False
+                'total_count': total_count,
+                'current_page': page,
+                'has_more': has_more
             }
             
         except Exception as e:
             print(f"레시피 검색 중 오류 발생: {e}")
-            return {'recipes': [], 'total_count': 0, 'has_more': False}
+            return {'recipes': [], 'total_count': 0, 'current_page': 1, 'has_more': False}
         
         finally:
             if cur:

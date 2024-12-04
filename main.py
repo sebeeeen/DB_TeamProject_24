@@ -1,15 +1,48 @@
+# main.py
+
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from services.user_service import UserService
 from services.recipe_service import RecipeService
-from database.db_connector import get_connection
 
 def get_user_input(prompt):
+    """사용자 입력을 받는 유틸리티 함수"""
     return input(prompt).strip()
+# main.py의 display_recipes 함수
+
+def display_recipes(result):
+    """레시피 검색 결과를 표시하는 함수"""
+    recipes = result.get('recipes', [])
+    total_count = result.get('total_count', 0)
+    current_page = result.get('current_page', 1)
+    has_more = result.get('has_more', False)
+    
+    if not recipes:
+        print("\n검색 결과가 없습니다.")
+        return False
+        
+    print(f"\n=== 검색 결과 (총 {total_count}개 중 {(current_page-1)*10+1}-{min(current_page*10, total_count)}개 표시) ===")
+    for recipe in recipes:
+        name = recipe.get('recipe_name', '이름 없음')
+        price = recipe.get('total_price', 0)
+        details = recipe.get('ingredients_detail', '재료 정보 없음')
+        
+        print(f"\n레시피명: {name}")
+        print(f"총 예상 비용: {price:.0f}원")
+        print("-" * 50)
+    
+    if has_more:
+        while True:
+            more_input = input("\n더 많은 결과를 보시겠습니까? (Y/N): ").strip().lower()
+            if more_input in ['y', 'n']:
+                return more_input == 'y'
+            print("Y 또는 N을 입력해주세요.")
+    return False
 
 def display_recipe_menu():
+    """레시피 검색 메뉴를 표시하고 처리하는 함수"""
     while True:
         print("\n=== 레시피 검색 ===")
         print("1. 예산으로 검색")
@@ -23,26 +56,53 @@ def display_recipe_menu():
             if choice == "1":
                 budget = float(get_user_input("예산을 입력하세요 (원): "))
                 quarter = int(get_user_input("분기를 입력하세요 (1-4): "))
+                
                 if quarter < 1 or quarter > 4:
                     print("올바른 분기를 입력하세요 (1-4)")
                     continue
-                    
-                result = RecipeService.search_recipes_by_budget(budget, quarter)
-                display_recipes(result)
+                
+                page = 1
+                while True:
+                    result = RecipeService.search_recipes_by_budget(budget, quarter, page)
+                    show_more = display_recipes(result)
+                    if not show_more:
+                        break
+                    page += 1
                     
             elif choice == "2":
                 allergy = get_user_input("알레르기 정보를 입력하세요 (쉼표로 구분): ")
                 quarter = int(get_user_input("분기를 입력하세요 (1-4): "))
-                result = RecipeService.search_recipes_by_allergy(allergy, quarter)
-                display_recipes(result)
+                
+                if quarter < 1 or quarter > 4:
+                    print("올바른 분기를 입력하세요 (1-4)")
+                    continue
+                
+                page = 1
+                while True:
+                    result = RecipeService.search_recipes_by_allergy(allergy, quarter, page)
+                    show_more = display_recipes(result)
+                    if not show_more:
+                        break
+                    page += 1
                 
             elif choice == "3":
                 quarter = int(get_user_input("분기를 입력하세요 (1-4): "))
-                result = RecipeService.get_all_recipes(quarter)
-                display_recipes(result)
+                
+                if quarter < 1 or quarter > 4:
+                    print("올바른 분기를 입력하세요 (1-4)")
+                    continue
+                
+                page = 1
+                while True:
+                    result = RecipeService.get_all_recipes(quarter, page)
+                    show_more = display_recipes(result)
+                    if not show_more:
+                        break
+                    page += 1
                 
             elif choice == "4":
                 break
+                
             else:
                 print("\n잘못된 선택입니다. 다시 선택해주세요.")
                 
@@ -51,61 +111,12 @@ def display_recipe_menu():
         except Exception as e:
             print(f"오류 발생: {e}")
 
-def display_recipes(result):
-    recipes = result['recipes']
-    total_count = result['total_count']
-    
-    if not recipes:
-        print("\n검색 결과가 없습니다.")
-        return False
-        
-    print(f"\n=== 검색 결과 (총 {total_count}개) ===")
-    for idx, recipe in enumerate(recipes, 1):
-        print(f"\n{idx}. 레시피명: {recipe['recipe_name']}")
-        print(f"   예상 비용: {recipe['total_price']:.0f}원")
-        print("-" * 50)
-    
-    return False            
-def get_recipe_ingredients(recipe_id, quarter):
-    """특정 레시피의 재료 정보 조회"""
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        
-        query = """
-            SELECT 
-                in.name,
-                ri.amount,
-                ip.price
-            FROM RecipeIngredient_info ri
-            JOIN IngredientName in ON ri.ingredientID = in.ingredientID
-            JOIN IngredientPrice ip ON in.ingredientID = ip.ingredientID
-            WHERE ri.recipeID = %s AND ip.quarter = %s;
-        """
-        
-        cur.execute(query, (recipe_id, quarter))
-        ingredients = cur.fetchall()
-        
-        return [
-            {
-                'ingredient_name': ingredient[0],
-                'amount': ingredient[1],
-                'price': ingredient[2]
-            }
-            for ingredient in ingredients
-        ]
-        
-    except Exception as e:
-        print(f"재료 정보 조회 중 오류 발생: {e}")
-        return []
-        
-    finally:
-        if cur:
-            cur.close()
-        if conn:
-            conn.close()
+def display_price_menu():
+    """가격 조회 메뉴를 표시하고 처리하는 함수"""
+    print("\n가격 조회 기능은 아직 준비중입니다.")
 
 def display_main_menu():
+    """메인 메뉴를 표시하는 함수"""
     print("\n=== 메인 메뉴 ===")
     print("1. 레시피 검색")
     print("2. 가격 조회")
@@ -113,11 +124,13 @@ def display_main_menu():
     print("4. 종료")
 
 def main():
+    """메인 프로그램 실행 함수"""
     while True:
         print("\n=== 대학생 식비 최적화 도우미 ===")
         print("1. 로그인")
         print("2. 회원가입")
         print("3. 종료")
+        
         choice = get_user_input("선택해주세요 (1-3): ")
 
         if choice == "1":
@@ -136,8 +149,7 @@ def main():
                     if menu_choice == "1":
                         display_recipe_menu()
                     elif menu_choice == "2":
-                        # TODO: 가격 조회 기능 구현
-                        print("\n가격 조회 기능은 준비 중입니다.")
+                        display_price_menu()
                     elif menu_choice == "3":
                         print("\n로그아웃되었습니다.")
                         break
