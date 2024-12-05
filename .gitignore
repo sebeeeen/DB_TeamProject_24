@@ -25,7 +25,7 @@ var/
 .vscode/
 
 # 데이터베이스 설정
-database/db_connector.py  # 데이터베이스 비밀번호가 있는 파일
+/database/db_connector.py  # 데이터베이스 비밀번호가 있는 파일
 
 # 운영체제 관련
 .DS_Store  # Mac
