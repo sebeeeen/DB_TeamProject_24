@@ -83,38 +83,39 @@ class RecipeService:
 
     @staticmethod
     def search_recipes_by_allergy(allergy, quarter, page=1, per_page=10):
-        """알레르기 정보 기반 레시피 검색"""
+        conn = None
+        cur = None
         try:
             conn = get_connection()
             cur = conn.cursor()
             
-            allergies = [a.strip() for a in allergy.split(',')]
+            allergies = [a.strip() for a in allergy.split(',') if a.strip()]
             
             query = """
-                SELECT 
+                SELECT DISTINCT
                     r.recipeID,
                     r.recipeName,
-                    CAST(SUM(ri.amount * ip.price) AS DECIMAL(10,2)) as total_cost,
+                    CAST(SUM(ri.amount * COALESCE(ip.price, 0)) AS DECIMAL(10,2)) as total_cost,
                     string_agg(
                         concat(
                             in_name.name, ' (', 
                             ri.amount, 'g × ', 
-                            ip.price, '원/g = ', 
-                            CAST(ri.amount * ip.price AS DECIMAL(10,2)), '원)'
+                            COALESCE(ip.price, 0), '원/g = ', 
+                            CAST(ri.amount * COALESCE(ip.price, 0) AS DECIMAL(10,2)), '원)'
                         ),
                         E'\n   '
                     ) as ingredients_detail
                 FROM Recipe r
                 LEFT JOIN RecipeIngredient_info ri ON r.recipeID = ri.recipeID
-                LEFT JOIN IngredientPrice ip ON ri.ingredientID = ip.ingredientID
                 LEFT JOIN IngredientName in_name ON ri.ingredientID = in_name.ingredientID
-                WHERE ip.quarter = %s
-                AND r.recipeID NOT IN (
-                    SELECT DISTINCT r2.recipeID
-                    FROM Recipe r2
-                    JOIN RecipeIngredient_info ri2 ON r2.recipeID = ri2.recipeID
+                LEFT JOIN IngredientPrice ip ON ri.ingredientID = ip.ingredientID 
+                    AND ip.quarter = %s
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM RecipeIngredient_info ri2
                     JOIN IngredientName ing ON ri2.ingredientID = ing.ingredientID
-                    WHERE LOWER(ing.name) LIKE ANY(SELECT LOWER('%' || x || '%') FROM unnest(%s) as x)
+                    WHERE ri2.recipeID = r.recipeID
+                    AND LOWER(ing.name) SIMILAR TO LOWER(%s)
                 )
                 GROUP BY r.recipeID, r.recipeName
                 ORDER BY r.recipeName
@@ -122,7 +123,9 @@ class RecipeService:
             """
             
             offset = (page - 1) * per_page
-            cur.execute(query, (quarter, allergies, per_page, offset))
+            allergy_pattern = '%%(' + '|'.join(allergies) + ')%%'
+            
+            cur.execute(query, (quarter, allergy_pattern, per_page, offset))
             
             recipes = []
             for row in cur.fetchall():
@@ -136,16 +139,15 @@ class RecipeService:
             count_query = """
                 SELECT COUNT(DISTINCT r.recipeID)
                 FROM Recipe r
-                WHERE r.recipeID NOT IN (
-                    SELECT DISTINCT r2.recipeID
-                    FROM Recipe r2
-                    JOIN RecipeIngredient_info ri2 ON r2.recipeID = ri2.recipeID
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM RecipeIngredient_info ri2
                     JOIN IngredientName ing ON ri2.ingredientID = ing.ingredientID
-                    WHERE LOWER(ing.name) LIKE ANY(SELECT LOWER('%' || x || '%') FROM unnest(%s) as x)
+                    WHERE ri2.recipeID = r.recipeID
+                    AND LOWER(ing.name) SIMILAR TO LOWER(%s)
                 )
             """
-            
-            cur.execute(count_query, (allergies,))
+            cur.execute(count_query, (allergy_pattern,))
             total_count = cur.fetchone()[0]
             
             has_more = total_count > (page * per_page)
@@ -156,11 +158,10 @@ class RecipeService:
                 'current_page': page,
                 'has_more': has_more
             }
-            
+
         except Exception as e:
-            print(f"레시피 검색 중 오류 발생: {e}")
             return {'recipes': [], 'total_count': 0, 'current_page': 1, 'has_more': False}
-        
+
         finally:
             if cur:
                 cur.close()
