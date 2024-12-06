@@ -14,6 +14,8 @@ def init_database():
         cur.execute("TRUNCATE TABLE IngredientPrice CASCADE;")
         cur.execute("TRUNCATE TABLE Recipe CASCADE;")
         cur.execute("TRUNCATE TABLE IngredientName CASCADE;")
+        cur.execute("TRUNCATE TABLE recipe_nutrition CASCADE;")
+        cur.execute("DROP TABLE IF EXISTS users;")  # user 테이블이 있다면 삭제
 
         # Create tables
         cur.execute("""
@@ -45,6 +47,28 @@ def init_database():
                 ingredientID INT REFERENCES IngredientName(ingredientID),
                 amount DECIMAL(10, 2) NOT NULL,
                 PRIMARY KEY (recipeID, ingredientID)
+            );
+        """)
+
+        # recipe_nutrition 테이블 생성
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS recipe_nutrition (
+                recipe_id INTEGER PRIMARY KEY,
+                calories DECIMAL,
+                carbohydrate DECIMAL,
+                protein DECIMAL,
+                fat DECIMAL
+            );
+        """)
+
+        # users 테이블 생성
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                username VARCHAR(50) UNIQUE NOT NULL,
+                password VARCHAR(100) NOT NULL,
+                email VARCHAR(100) UNIQUE NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         """)
 
@@ -84,6 +108,20 @@ def init_database():
                 """,
                 (int(row['recipeID']), int(row['ingredientID']), float(row['amount']))
             )
+
+        # RecipeNutrition.csv 데이터 읽기 및 삽입
+        nutrition_df = pd.read_csv(os.path.join(base_path, 'data', 'RecipeNutrition.csv'))
+        for _, row in nutrition_df.iterrows():
+            cur.execute("""
+                INSERT INTO recipe_nutrition (recipe_id, calories, carbohydrate, protein, fat)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (
+                float(row['recipe_ID']),
+                float(row['calories']),
+                float(row['carbohydrate']),
+                float(row['protein']),
+                float(row['fat'])
+            ))
 
         conn.commit()
 

@@ -30,7 +30,7 @@ class RecipeService:
                 WHERE ip.quarter = %s
                 GROUP BY r.recipeID, r.recipeName
                 HAVING CAST(SUM(ri.amount * ip.price) AS DECIMAL(10,2)) <= %s
-                ORDER BY total_cost ASC
+                ORDER BY total_cost DESC
                 LIMIT %s OFFSET %s;
             """
             
@@ -101,7 +101,7 @@ class RecipeService:
                             in_name.name, ' (', 
                             ri.amount, 'g × ', 
                             COALESCE(ip.price, 0), '원/g = ', 
-                            CAST(ri.amount * COALESCE(ip.price, 0) AS DECIMAL(10,2)), '원)'
+                            CAST(ri.amount * COALESCE(ip.price, 0) AS DECIMAL(10,2)), '��)'
                         ),
                         E'\n   '
                     ) as ingredients_detail
@@ -195,7 +195,7 @@ class RecipeService:
                     AND ip.quarter = %s
                 LEFT JOIN IngredientName in_name ON ri.ingredientID = in_name.ingredientID
                 GROUP BY r.recipeID, r.recipeName
-                ORDER BY r.recipeName ASC
+                ORDER BY total_cost DESC
                 LIMIT %s OFFSET %s;
             """
             
@@ -234,3 +234,43 @@ class RecipeService:
                 cur.close()
             if conn:
                 conn.close()
+
+    def get_recipes(self):
+        try:
+            cur = self.conn.cursor(cursor_factory=RealDictCursor)
+            
+            # 레시피별 총 가격을 계산하고 가격 순으로 정렬하는 쿼리
+            query = """
+                WITH recipe_total_price AS (
+                    SELECT 
+                        r.recipeID,
+                        r.recipeName,
+                        SUM(ri.amount * ip.price) as total_price
+                    FROM Recipe r
+                    JOIN RecipeIngredient_info ri ON r.recipeID = ri.recipeID
+                    JOIN IngredientPrice ip ON ri.ingredientID = ip.ingredientID
+                    WHERE ip.quarter = (
+                        SELECT MAX(quarter) 
+                        FROM IngredientPrice 
+                        WHERE EXTRACT(YEAR FROM CURRENT_DATE) = EXTRACT(YEAR FROM CURRENT_DATE)
+                    )
+                    GROUP BY r.recipeID, r.recipeName
+                )
+                SELECT 
+                    recipeID,
+                    recipeName,
+                    ROUND(total_price::numeric, 2) as total_price
+                FROM recipe_total_price
+                ORDER BY total_price DESC;
+            """
+            
+            cur.execute(query)
+            recipes = cur.fetchall()
+            return recipes
+            
+        except Exception as e:
+            print(f"Error fetching recipes: {e}")
+            return []
+        finally:
+            if cur:
+                cur.close()
