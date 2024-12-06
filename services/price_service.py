@@ -13,7 +13,7 @@ class PriceService:
             query = """
                 SELECT ip.quarter, ip.price, in_name.name
                 FROM IngredientPrice ip
-                JOIN IngredientNßame in_name ON ip.ingredientID = in_name.ingredientID
+                JOIN IngredientName in_name ON ip.ingredientID = in_name.ingredientID
                 WHERE in_name.name = %s
             """
             params = [ingredient_name]
