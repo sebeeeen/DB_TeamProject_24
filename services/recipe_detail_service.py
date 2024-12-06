@@ -8,7 +8,7 @@ class RecipeDetailService:
             conn = get_connection()
             cur = conn.cursor()
             
-            # 레시피 기본 정보와 조리 과정을 함께 조회
+            # recipe_detail_service.py 수정
             query = """
                 SELECT 
                     r.recipeid,
@@ -19,14 +19,20 @@ class RecipeDetailService:
                     COALESCE(NULLIF(cm.manual04, ''), NULL) as manual04,
                     COALESCE(NULLIF(cm.manual05, ''), NULL) as manual05,
                     COALESCE(NULLIF(cm.manual06, ''), NULL) as manual06,
-                    string_agg(DISTINCT in_name.name, ', ') as ingredients
+                    string_agg(DISTINCT in_name.name, ', ') as ingredients,
+                    rn.calories,
+                    rn.carbohydrate,
+                    rn.protein,
+                    rn.fat
                 FROM recipe r
                 LEFT JOIN cooking_method cm ON r.recipeid = cm.recipe_id
                 LEFT JOIN recipeingredient_info ri ON r.recipeid = ri.recipeid
                 LEFT JOIN ingredientname in_name ON ri.ingredientid = in_name.ingredientid
+                LEFT JOIN recipe_nutrition rn ON r.recipeid = rn.recipe_id
                 WHERE r.recipeid = %s
                 GROUP BY r.recipeid, r.recipename, cm.manual01, cm.manual02, 
-                         cm.manual03, cm.manual04, cm.manual05, cm.manual06
+                        cm.manual03, cm.manual04, cm.manual05, cm.manual06,
+                        rn.calories, rn.carbohydrate, rn.protein, rn.fat
             """
             
             cur.execute(query, (recipe_id,))
@@ -40,7 +46,13 @@ class RecipeDetailService:
                 'recipe_id': result[0],
                 'recipe_name': result[1],
                 'cooking_steps': [],
-                'ingredients': result[8] if result[8] else "재료 정보 없음"
+                'ingredients': result[8] if result[8] else "재료 정보 없음",
+                'nutrition': {
+                    'calories': result[9],
+                    'carbohydrate': result[10],
+                    'protein': result[11],
+                    'fat': result[12]
+                }
             }
             
             # 조리 단계 추가 (빈 단계는 제외)
@@ -59,7 +71,7 @@ class RecipeDetailService:
 def display_recipe_detail(recipe_details):
     """레시피 상세 정보 출력"""
     if not recipe_details:
-        print("\n레시피를 찾을 수 없습니.")
+        print("\n레시피를 찾을 수 없습니다.")
         return
         
     print(f"\n{'='*50}")
@@ -68,6 +80,17 @@ def display_recipe_detail(recipe_details):
     
     print("\n[필요한 재료]")
     print(recipe_details['ingredients'])
+    
+    print("\n[영양 정보]")
+    nutrition = recipe_details['nutrition']
+    if nutrition['calories'] is not None:
+        print(f"열량: {nutrition['calories']}kcal")
+    if nutrition['carbohydrate'] is not None:
+        print(f"탄수화물: {nutrition['carbohydrate']}g")
+    if nutrition['protein'] is not None:
+        print(f"단백질: {nutrition['protein']}g")
+    if nutrition['fat'] is not None:
+        print(f"지방: {nutrition['fat']}g")
     
     print("\n[조리 순서]")
     for i, step in enumerate(recipe_details['cooking_steps'], 1):
