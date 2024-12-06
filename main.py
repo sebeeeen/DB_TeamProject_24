@@ -11,33 +11,43 @@ def get_user_input(prompt):
    return input(prompt).strip()
 
 def display_recipes(result):
-   """레시피 검색 결과를 표시하는 함수"""
-   recipes = result.get('recipes', [])
-   total_count = result.get('total_count', 0)
-   current_page = result.get('current_page', 1)
-   has_more = result.get('has_more', False)
-   
-   if not recipes:
-       print("\n검색 결과가 없습니다.")
-       return False
-       
-   print(f"\n=== 검색 결과 (총 {total_count}개 중 {(current_page-1)*10+1}-{min(current_page*10, total_count)}개 표시) ===")
-   for recipe in recipes:
-       name = recipe.get('recipe_name', '이름 없음')
-       price = recipe.get('total_price', 0)
-       details = recipe.get('ingredients_detail', '재료 정보 없음')
-       
-       print(f"\n레시피명: {name}")
-       print(f"총 예상 비용: {price:.0f}원")
-       print("-" * 50)
-   
-   if has_more:
-       while True:
-           more_input = input("\n더 많은 결과를 보시겠습니까? (Y/N): ").strip().lower()
-           if more_input in ['y', 'n']:
-               return more_input == 'y'
-           print("Y 또는 N을 입력해주세요.")
-   return False
+    """레시피 검색 결과를 표시하는 함수"""
+    recipes = result.get('recipes', [])
+    total_count = result.get('total_count', 0)
+    current_page = result.get('current_page', 1)
+    has_more = result.get('has_more', False)
+    
+    if not recipes:
+        print("\n검색 결과가 없습니다.")
+        return False
+        
+    print(f"\n=== 검색 결과 (총 {total_count}개 중 {(current_page-1)*10+1}-{min(current_page*10, total_count)}개 표시) ===")
+    for recipe in recipes:
+        name = recipe.get('recipe_name', '이름 없음')
+        recipe_id = recipe.get('recipe_id', '번호 없음')
+        price = recipe.get('total_price', 0)
+        
+        print(f"\n레시피 ID: {recipe_id}")
+        print(f"레시피: {name}")
+        print(f"총 예상 비용: {price:.0f}원")
+        print("-" * 50)
+    
+    while True:
+        print("\n1. 레시피 상세 정보 보기")
+        print("2. 더 많은 결과 보기") if has_more else None
+        print("3. 이전 메뉴로")
+        
+        choice = get_user_input("선택해주세요: ").strip()
+        
+        if choice == "1":
+            from services.recipe_detail_service import display_recipe_detail_menu
+            display_recipe_detail_menu()
+        elif choice == "2" and has_more:
+            return True
+        elif choice == "3":
+            return False
+        else:
+            print("올바른 선택지를 입력하세요.")
 
 def display_recipe_menu(user):
    """레시피 검색 메뉴를 표시하고 처리하는 함수"""
@@ -91,7 +101,7 @@ def display_recipe_menu(user):
                quarter = int(get_user_input("분기를 입력하세요 (1-4): "))
                
                if quarter < 1 or quarter > 4:
-                   print("올바른 분기를 입력하세요 (1-4)")
+                   print("올바른 분기 입력하세요 (1-4)")
                    continue
                
                page = 1
@@ -142,7 +152,7 @@ def display_price_menu():
                    for r in results:
                        print(f"{r['quarter']}분기: {r['price']:,.2f}원/g")
                else:
-                   print("\n재료��� 찾을 수 없습니다.")
+                   print("\n재료 찾을 수 없습니다.")
                    
            elif choice == "2":
                recipe_name = get_user_input("조회할 레시피명을 입력하세요: ")
