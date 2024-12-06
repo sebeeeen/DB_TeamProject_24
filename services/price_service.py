@@ -1,6 +1,7 @@
 # services/price_service.py
 from database.db_connector import get_connection
 
+
 class PriceService:
     @staticmethod
     def get_ingredient_price_by_quarter(ingredient_name, quarter=None):
@@ -8,30 +9,29 @@ class PriceService:
         try:
             conn = get_connection()
             cur = conn.cursor()
-            
+
             query = """
                 SELECT ip.quarter, ip.price, in_name.name
                 FROM IngredientPrice ip
-                JOIN IngredientName in_name ON ip.ingredientID = in_name.ingredientID
+                JOIN IngredientNßame in_name ON ip.ingredientID = in_name.ingredientID
                 WHERE in_name.name = %s
             """
             params = [ingredient_name]
-            
+
             if quarter:
                 query += " AND ip.quarter = %s"
                 params.append(quarter)
-                
+
             query += " ORDER BY ip.quarter"
-            
+
             cur.execute(query, params)
             results = cur.fetchall()
-            
-            return [{
-                'quarter': row[0],
-                'price': float(row[1]),
-                'ingredient_name': row[2]
-            } for row in results]
-            
+
+            return [
+                {"quarter": row[0], "price": float(row[1]), "ingredient_name": row[2]}
+                for row in results
+            ]
+
         finally:
             if cur:
                 cur.close()
@@ -44,7 +44,7 @@ class PriceService:
         try:
             conn = get_connection()
             cur = conn.cursor()
-            
+
             query = """
                 SELECT 
                     ip.quarter,
@@ -66,26 +66,29 @@ class PriceService:
                 WHERE r.recipeName = %s
             """
             params = [recipe_name]
-            
+
             if quarter:
                 query += " AND ip.quarter = %s"
                 params.append(quarter)
-                
+
             query += """
                 GROUP BY ip.quarter, r.recipeName
                 ORDER BY ip.quarter
             """
-            
+
             cur.execute(query, params)
             results = cur.fetchall()
-            
-            return [{
-                'quarter': row[0],
-                'recipe_name': row[1],
-                'total_price': float(row[2]),
-                'ingredients_detail': row[3]
-            } for row in results]
-            
+
+            return [
+                {
+                    "quarter": row[0],
+                    "recipe_name": row[1],
+                    "total_price": float(row[2]),
+                    "ingredients_detail": row[3],
+                }
+                for row in results
+            ]
+
         finally:
             if cur:
                 cur.close()
@@ -98,7 +101,7 @@ class PriceService:
         try:
             conn = get_connection()
             cur = conn.cursor()
-            
+
             if ingredient_name:
                 query = """
                     SELECT 
@@ -115,7 +118,7 @@ class PriceService:
                     ORDER BY ip.quarter
                 """
                 cur.execute(query, (ingredient_name,))
-                
+
             elif recipe_name:
                 query = """
                     WITH recipe_prices AS (
@@ -141,16 +144,19 @@ class PriceService:
                     ORDER BY quarter
                 """
                 cur.execute(query, (recipe_name,))
-                
+
             results = cur.fetchall()
-            
-            return [{
-                'name': row[0],
-                'quarter': row[1],
-                'price': float(row[2]),
-                'price_change_percent': float(row[3]) if row[3] is not None else 0
-            } for row in results]
-            
+
+            return [
+                {
+                    "name": row[0],
+                    "quarter": row[1],
+                    "price": float(row[2]),
+                    "price_change_percent": float(row[3]) if row[3] is not None else 0,
+                }
+                for row in results
+            ]
+
         finally:
             if cur:
                 cur.close()

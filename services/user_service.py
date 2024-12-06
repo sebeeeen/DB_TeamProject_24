@@ -1,6 +1,7 @@
 from database.user_db import create_user, get_user_by_credentials
 from models.user import User
 
+
 class UserService:
     @staticmethod
     def register_user(username, password, allergy):  # password 매개변수 추가
