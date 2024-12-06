@@ -31,7 +31,7 @@ class RecipeService:
                 LEFT JOIN IngredientName in_name ON ri.ingredientID = in_name.ingredientID
                 WHERE rbv.quarter = %s AND rbv.total_price <= %s
                 GROUP BY rbv.recipe_id, rbv.recipe_name, rbv.total_price
-                ORDER BY rbv.total_price ASC
+                ORDER BY rbv.total_price DESC
                 LIMIT %s OFFSET %s;
             """
 
